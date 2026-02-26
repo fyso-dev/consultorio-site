@@ -1,0 +1,11 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminGuard from '../../components/react/AdminGuard';
+import SiteConfigEditor from '../../components/react/SiteConfigEditor';
+---
+
+<AdminLayout title="Configuracion del Sitio" activePage="sitio">
+  <AdminGuard client:load>
+    <SiteConfigEditor client:load />
+  </AdminGuard>
+</AdminLayout>

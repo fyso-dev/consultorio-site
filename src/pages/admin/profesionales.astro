@@ -1,0 +1,11 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminGuard from '../../components/react/AdminGuard';
+import DoctorsPage from '../../components/react/DoctorsPage';
+---
+
+<AdminLayout title="Profesionales" activePage="profesionales">
+  <AdminGuard client:load>
+    <DoctorsPage client:load />
+  </AdminGuard>
+</AdminLayout>

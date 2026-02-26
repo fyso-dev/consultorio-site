@@ -1,0 +1,12 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminGuard from '../../components/react/AdminGuard';
+import CrudPage from '../../components/react/CrudPage';
+import { patientsConfig } from '../../lib/entities';
+---
+
+<AdminLayout title="Pacientes" activePage="pacientes">
+  <AdminGuard client:load>
+    <CrudPage config={patientsConfig} client:load />
+  </AdminGuard>
+</AdminLayout>

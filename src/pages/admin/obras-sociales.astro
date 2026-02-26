@@ -1,0 +1,12 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminGuard from '../../components/react/AdminGuard';
+import CrudPage from '../../components/react/CrudPage';
+import { networksConfig } from '../../lib/entities';
+---
+
+<AdminLayout title="Obras Sociales" activePage="obras-sociales">
+  <AdminGuard client:load>
+    <CrudPage config={networksConfig} client:load />
+  </AdminGuard>
+</AdminLayout>

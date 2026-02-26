@@ -1,0 +1,11 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import AdminGuard from '../../components/react/AdminGuard';
+import Agenda from '../../components/react/Agenda';
+---
+
+<AdminLayout title="Agenda de Turnos" activePage="agenda">
+  <AdminGuard client:load>
+    <Agenda client:load />
+  </AdminGuard>
+</AdminLayout>
