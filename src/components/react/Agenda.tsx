@@ -287,8 +287,8 @@ function EditTurnoModal({ turno, onClose, onSaved, onDeleted, patientsLookup, se
         </div>
         <div className="p-6 space-y-4">
           <div className="flex items-center gap-3 text-sm text-gray-500">
-            <span className="font-medium text-gray-900">{field(turno, 'date')?.split('T')[0]}</span>
-            <span>{field(turno, 'time')}</span>
+            <span className="font-medium text-gray-900">{field(turno, 'appointment_date')?.split('T')[0]}</span>
+            <span>{field(turno, 'appointment_date')?.split('T')[1]?.slice(0, 5)}</span>
           </div>
 
           <PatientSearch
@@ -488,8 +488,7 @@ export default function Agenda() {
       const turnoData: Record<string, any> = {
         doctor_id: slotDoctorId(bookingSlot),
         patient_id: selectedPatient.id,
-        date: slotDate(bookingSlot),
-        time: slotTime(bookingSlot),
+        appointment_date: `${slotDate(bookingSlot).split('T')[0]}T${slotTime(bookingSlot)}:00`,
         status: 'confirmado',
       };
       if (bookingServicio) turnoData.service_id = bookingServicio;
@@ -542,8 +541,7 @@ export default function Agenda() {
     try {
       const turnoData: Record<string, any> = {
         doctor_id: slotDoctorId(slot),
-        date: slotDate(slot),
-        time: slotTime(slot),
+        appointment_date: `${slotDate(slot).split('T')[0]}T${slotTime(slot)}:00`,
         status: 'bloqueado',
       };
       const rawTurno = await apiCreate('appointments', turnoData);
@@ -576,7 +574,7 @@ export default function Agenda() {
   // Turnos count per date for calendar dots
   const turnosByDate: Record<string, number> = {};
   for (const t of turnos) {
-    const f = normalizeDate(field(t, 'date'));
+    const f = normalizeDate(field(t, 'appointment_date'));
     if (f && (!selectedDoctor || field(t, 'doctor_id') === selectedDoctor)) {
       turnosByDate[f] = (turnosByDate[f] || 0) + 1;
     }
@@ -584,11 +582,11 @@ export default function Agenda() {
 
   // Turnos for selected date + doctor
   const turnosDelDia = turnos
-    .filter(t => normalizeDate(field(t, 'date')) === selectedDate)
+    .filter(t => normalizeDate(field(t, 'appointment_date')) === selectedDate)
     .filter(t => !selectedDoctor || field(t, 'doctor_id') === selectedDoctor)
-    .sort((a, b) => (field(a, 'time') || '').localeCompare(field(b, 'time') || ''));
+    .sort((a, b) => (field(a, 'appointment_date')?.split('T')[1]?.slice(0, 5) || '').localeCompare(field(b, 'appointment_date')?.split('T')[1]?.slice(0, 5) || ''));
 
-  const bookedHoras = new Set(turnosDelDia.map(t => field(t, 'time')));
+  const bookedHoras = new Set(turnosDelDia.map(t => field(t, 'appointment_date')?.split('T')[1]?.slice(0, 5)));
   const freeSlots = availableSlots.filter(s => !bookedHoras.has(slotTime(s)));
 
   const calendarDays = getCalendarDays(calYear, calMonth);
@@ -810,7 +808,7 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {[
-              ...turnosDelDia.map(t => ({ type: 'booked' as const, hora: field(t, 'time') || '', turno: t })),
+              ...turnosDelDia.map(t => ({ type: 'booked' as const, hora: field(t, 'appointment_date')?.split('T')[1]?.slice(0, 5) || '', turno: t })),
               ...freeSlots.map(s => ({ type: 'free' as const, hora: slotTime(s), slot: s })),
             ]
               .sort((a, b) => a.hora.localeCompare(b.hora))
