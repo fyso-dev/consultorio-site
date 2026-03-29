@@ -1,212 +1,215 @@
-# App Distribution Plan — consultorio-site
-
-Research document for making consultorio-site distributable as a Fyso app template.
+# App Distribution Plan for Consultorio
 
 ## 1. Current State
 
 ### Hardcoded Tenant References
 
-The string `consultorio` appears as a hardcoded identifier in three categories:
+The codebase has **`consultorio`** hardcoded in multiple files:
 
-**TENANT_ID constant** (3 files):
-- `src/lib/api.ts:2` — `const TENANT_ID = 'consultorio'` (server-side SSR fetch)
-- `src/lib/api-client.ts:2` — `const TENANT_ID = 'consultorio'` (client-side CRUD)
-- `src/lib/auth.ts:2` — `const TENANT_ID = 'consultorio'` (login endpoint)
+| File | What is hardcoded | Line(s) |
+|------|-------------------|---------|
+| `src/lib/api.ts` | `const TENANT_ID = 'consultorio'` | 2 |
+| `src/lib/api-client.ts` | `const TENANT_ID = 'consultorio'` | 2 |
+| `src/lib/auth.ts` | `const TENANT_ID = 'consultorio'` | 2 |
+| `src/lib/api-client.ts` | `localStorage` keys: `consultorio_token`, `consultorio_user` | 5, 19-20 |
+| `src/lib/auth.ts` | `localStorage` keys: `consultorio_token`, `consultorio_user` | 24, 26, 35-36, 41, 46, 52 |
+| `src/lib/cart.ts` | `const CART_KEY = 'consultorio_cart'` | 8 |
+| `src/layouts/AdminLayout.astro` | `localStorage.removeItem('consultorio_token')` etc. | 137-138 |
+| `src/layouts/Layout.astro` | Default text: "Consultorio" in nav, footer, title | throughout |
+| `src/layouts/AdminLayout.astro` | Default text: "Consultorio" in sidebar | 37, 91 |
 
-All three send `X-Tenant-ID: consultorio` to the Fyso API at `https://app.fyso.dev`.
+### Hardcoded API Base URL
 
-**localStorage keys** (hardcoded prefix `consultorio_`):
-- `consultorio_token` — JWT token (used in `auth.ts`, `api-client.ts`, `AdminLayout.astro`)
-- `consultorio_user` — serialized user object (used in `auth.ts`, `AdminLayout.astro`)
-
-**Other references**:
-- `src/lib/cart.ts:8` — `const CART_KEY = 'consultorio_cart'`
-- `src/pages/contacto.astro:96` — `sessionStorage.getItem('consultorio_site_config')`
-- `src/components/react/LoginForm.tsx:50` — placeholder email `admin@consultorio.com`
-- Fallback display text in layouts ("Consultorio" in titles, footer, sidebar logos)
-
-### Environment Variables
-
-Only one env var exists:
-- `FYSO_API_TOKEN` — a developer publish-key used server-side by `src/lib/api.ts` for SSR data fetching (site_config, services, appointments at build time)
-
-There is **no** `TENANT_ID` env var — it is hardcoded in source.
-
-### Astro Configuration
-
-`astro.config.mjs` uses `output: 'static'` — the site is fully static (SSG). All Fyso API calls happen at **build time** (SSR pages) or **client-side** (React admin components). There is no server runtime.
-
-### How Auth Works
-
-1. User submits email/password to `POST /api/auth/tenant/login` with `X-Tenant-ID` header
-2. Response contains a JWT token stored in `localStorage` under `consultorio_token`
-3. All subsequent client-side API calls attach `Authorization: Bearer <token>` + `X-Tenant-ID`
-4. On 401 response, `handleUnauthorized()` clears localStorage and redirects to `/login`
-5. No server-side auth — admin pages are client-rendered React components behind an `AdminGuard`
-
-### How site_config Works
-
-1. At build time, `Layout.astro` calls `fetchSiteConfig()` which hits the Fyso API
-2. The config is baked into the HTML as a JavaScript variable via `define:vars`
-3. A client-side `applySiteConfig()` function updates DOM elements with `data-sc` attributes
-4. Fields: `clinic_name`, `clinic_slogan`, `address`, `phone`, `email`, `hours_weekday`, `hours_saturday`, `whatsapp`
-
-Each Fyso instance tenant has its **own data**, so `site_config` records are already per-instance. The only issue is that `TENANT_ID` must point to the correct tenant at build time.
-
-## 2. What Needs to Change for Multi-Tenant Support
-
-### 2.1 TENANT_ID Resolution
-
-**Current**: hardcoded string `'consultorio'` in 3 source files.
-
-**Recommended approach**: single env var `FYSO_TENANT_ID` read at build time and injected into client code.
-
-```
-# .env
-FYSO_TENANT_ID=consultorio
-FYSO_API_TOKEN=fyso_pkey_...
-```
-
-- `src/lib/api.ts` reads `import.meta.env.FYSO_TENANT_ID` (already has access to env via Astro SSR)
-- `src/lib/api-client.ts` and `src/lib/auth.ts` read `import.meta.env.PUBLIC_FYSO_TENANT_ID` (Astro requires `PUBLIC_` prefix for client-side env vars)
-- Astro replaces these at build time, producing a static bundle with the tenant baked in
-
-**Why not subdomain/path resolution at runtime?**
-The site is static (SSG). There is no server to inspect the request hostname. Runtime resolution would require switching to `output: 'server'` or `output: 'hybrid'`, adding hosting complexity. Since each instance gets its own deployment, a build-time env var is the simplest and most robust approach.
-
-**Trade-offs**:
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Env var at build time** (recommended) | Simple, no runtime overhead, works with static hosting (Netlify, Vercel, S3) | One build per tenant, tenant ID not switchable at runtime |
-| Subdomain resolution | Single deployment for all tenants | Requires server mode, DNS config, CORS complexity |
-| Path-based (`/tenant-slug/...`) | Single deployment | Requires server mode, URL rewriting, breaks relative paths |
-| Config file per deployment | No code changes needed | Still one build per deployment, extra file to manage |
-
-### 2.2 Environment Variables Per Instance
-
-Each instance deployment needs:
-
-| Variable | Purpose | Instance-specific? |
-|----------|---------|-------------------|
-| `FYSO_TENANT_ID` (new) | Tenant slug for API calls | Yes |
-| `FYSO_API_TOKEN` | Developer token for SSR builds | Yes (each org has its own) |
-| `PUBLIC_FYSO_TENANT_ID` (new) | Tenant slug for client-side JS | Yes (mirrors FYSO_TENANT_ID) |
-| `PUBLIC_FYSO_API_URL` (new, optional) | API base URL | No (defaults to `https://app.fyso.dev`) |
-
-### 2.3 localStorage Key Namespacing
-
-Currently all localStorage keys are prefixed with `consultorio_`. For multi-tenant support, keys should be namespaced by tenant:
-
-```
-`${TENANT_ID}_token`
-`${TENANT_ID}_user`
-`${TENANT_ID}_cart`
-```
-
-This prevents collisions if a user accesses multiple instance sites on the same browser (unlikely but correct).
-
-### 2.4 site_config Per Instance
-
-**Already works.** Each Fyso instance tenant has its own `site_config` entity records with its own data. The `fetchSiteConfig()` call uses `X-Tenant-ID`, so as long as `TENANT_ID` is correctly set, each instance gets its own clinic name, address, phone, etc.
-
-The fallback text in HTML ("Consultorio", "info@consultorio.com") is overridden at runtime by `applySiteConfig()`, so it only shows for a flash before hydration. This is acceptable but could be improved by using the build-time config to set initial values.
-
-### 2.5 Auth Per Instance
-
-**Already works.** The `POST /api/auth/tenant/login` endpoint uses `X-Tenant-ID` to scope authentication. Each instance tenant has its own user accounts. No changes needed beyond making `TENANT_ID` configurable.
-
-### 2.6 BASE_URL
-
-Hardcoded to `https://app.fyso.dev` in 3 files. Should be extracted to an env var with a default:
-
+Both `api.ts`, `api-client.ts`, and `auth.ts` hardcode:
 ```ts
-const BASE_URL = import.meta.env.PUBLIC_FYSO_API_URL || 'https://app.fyso.dev';
+const BASE_URL = 'https://app.fyso.dev';
+```
+This is the Fyso platform URL and is correct for all tenants -- it does **not** need to change per instance.
+
+### What is Already Configurable
+
+- **`site_config` entity**: The public layout (`Layout.astro`) fetches `site_config` at build time and applies it via `data-sc` attributes. Clinic name, slogan, address, phone, email, hours, and WhatsApp number are all overridable per-tenant through this entity.
+- **`FYSO_API_TOKEN`**: Already an env var (`.env`). Each instance just needs its own token.
+
+### Build Configuration
+
+- Astro is configured as `output: 'static'` -- the site is fully pre-rendered at build time.
+- `site_config` is fetched during SSG (server-side generation), so the built output already contains the correct tenant data.
+
+---
+
+## 2. Runtime Tenant Resolution Strategy
+
+Since the site is statically built, "runtime" resolution happens at **build time** (SSG) and **client-side** (admin panel, auth). Three strategies were evaluated:
+
+### Option A: Environment Variable (Recommended)
+
+Each deployment sets `TENANT_ID` as an env var. The build reads it, and client-side code receives it via Astro's `import.meta.env.PUBLIC_TENANT_ID`.
+
+| Pros | Cons |
+|------|------|
+| Simplest to implement | One build per tenant |
+| Works with any hosting (Vercel, Netlify, Docker) | Cannot share a single deployment |
+| No DNS/routing changes needed | - |
+| Clear separation between instances | - |
+
+**Env vars needed:**
+```
+PUBLIC_TENANT_ID=mi-clinica        # Used by client-side code (auth, api-client, cart)
+TENANT_ID=mi-clinica               # Used by server-side SSG (api.ts)
+FYSO_API_TOKEN=fyso_pkey_...       # Per-instance API token
 ```
 
-This allows self-hosted Fyso deployments in the future.
+### Option B: Subdomain Resolution
 
-## 3. Seed Data for Source Tenant
+Tenant ID derived from subdomain: `mi-clinica.consultorio-app.com` -> `mi-clinica`.
 
-The source tenant (the template) should include the following **schema** (entities + fields) that all instances inherit:
+| Pros | Cons |
+|------|------|
+| Single deployment serves all tenants | Requires SSR (not compatible with current static output) |
+| Professional per-tenant URLs | DNS wildcard + TLS wildcard needed |
+| - | Much higher complexity |
 
-### Entities (already exist)
-- `patients` — patient records
-- `doctors` — professionals/providers
-- `networks` — insurance providers (obras sociales)
-- `services` — available services
-- `specialties` — medical specialties
-- `appointments` — scheduled appointments
-- `site_config` — site configuration (clinic name, contact info, hours)
+**Verdict**: Not viable without migrating from `output: 'static'` to `output: 'server'`. Overkill for the current stage.
 
-### Seed Data (pre-populated records)
-The source tenant should include **minimal seed data** that instances can customize:
+### Option C: Path-Based Resolution
 
-- **site_config**: 1 record with placeholder values (`clinic_name: "Mi Consultorio"`, generic address, etc.)
-- **appointment statuses**: the status options are defined in `entity-config.ts` as a frontend enum, not in the database, so no seed data needed here
-- **No sample doctors/patients/services** — each instance starts empty and adds their own
+Tenant ID from URL path: `consultorio-app.com/mi-clinica/...`.
 
-### Business Rules
-Any scheduling rules, validation rules, or computed fields defined on the source tenant will be inherited by instances (schema is shared). The `instanceGuard` middleware ensures instances cannot modify these rules.
+| Pros | Cons |
+|------|------|
+| Single domain | Breaks all existing routes |
+| No DNS changes | SEO complications |
+| - | Requires SSR or complex rewrite rules |
 
-## 4. Future Code-Change Issues
+**Verdict**: Poor UX and high migration cost. Not recommended.
 
-### Issue A: Extract TENANT_ID to environment variable
-**Priority: High — blocking for distribution**
-- Replace hardcoded `'consultorio'` with `import.meta.env.FYSO_TENANT_ID` / `import.meta.env.PUBLIC_FYSO_TENANT_ID`
-- Replace hardcoded `'https://app.fyso.dev'` with env var + default
-- Update `.env.example` with new variables
-- Estimated: 1-2 hours
+### Decision: Option A (Environment Variable)
 
-### Issue B: Namespace localStorage keys by tenant
-**Priority: High — blocking for distribution**
-- Replace `consultorio_token`, `consultorio_user`, `consultorio_cart` with `${TENANT_ID}_token`, etc.
-- Create a shared `storageKey(name)` helper
-- Estimated: 1 hour
+Each instance tenant gets its own deployment with its own env vars. This aligns perfectly with the existing static build model and Fyso's app distribution architecture where each instance is an independent tenant.
 
-### Issue C: Remove hardcoded fallback text
-**Priority: Medium**
-- Replace "Consultorio" fallbacks in `Layout.astro`, `AdminLayout.astro`, `LoginForm.tsx` with build-time site_config values
-- The `<title>` tag, sidebar logo text, and placeholder email should come from config
-- Estimated: 1-2 hours
+---
 
-### Issue D: Create deployment documentation
-**Priority: Medium**
-- Document how to deploy an instance: create instance tenant, set env vars, build, deploy
-- CI/CD template (GitHub Actions) that builds with tenant-specific env vars
-- Estimated: 2 hours
+## 3. Per-Instance Environment Variables
 
-### Issue E: Evaluate SSR/hybrid mode for multi-tenant single-deployment
-**Priority: Low — future optimization**
-- If many instances are created, building separate static sites for each becomes expensive
-- Evaluate switching to `output: 'hybrid'` with dynamic tenant resolution
-- This is a significant architectural change; defer until there is demand
-- Estimated: 1-2 days
+```bash
+# .env.example (updated)
 
-### Issue F: Instance provisioning automation
-**Priority: Low — future**
-- Script or API call to create an instance tenant, seed site_config, and trigger a build
-- Integration with Fyso's instance creation API
-- Estimated: 1 day
+# Fyso tenant identifier for this instance
+PUBLIC_TENANT_ID=consultorio
+TENANT_ID=consultorio
 
-## 5. Recommended Approach
+# Fyso developer token (generate via Fyso dashboard)
+FYSO_API_TOKEN=your-developer-token-here
+```
 
-### Phase 1 — Make it distributable (Issues A + B + C + D)
-1. Extract all hardcoded values to env vars
-2. Namespace localStorage keys
-3. Clean up hardcoded fallback text
-4. Write deployment docs
+- `TENANT_ID` -- used at build time by `src/lib/api.ts` (SSG fetch). Not exposed to the browser.
+- `PUBLIC_TENANT_ID` -- used by client-side code (`api-client.ts`, `auth.ts`, `cart.ts`). Astro exposes `PUBLIC_`-prefixed vars to the client.
+- `FYSO_API_TOKEN` -- server-side only, used during SSG to fetch data.
 
-**Result**: any developer can clone the repo, set `FYSO_TENANT_ID` and `FYSO_API_TOKEN`, and deploy their own instance.
+---
 
-### Phase 2 — Automate instance creation (Issue F)
-1. Create a provisioning script that uses Fyso API to create an instance tenant
-2. Auto-populate `site_config` seed record
-3. Trigger build + deploy pipeline
+## 4. How `site_config` Works Per Instance
 
-### Phase 3 — Single-deployment multi-tenant (Issue E)
-1. Switch to hybrid/server rendering
-2. Resolve tenant from subdomain or path
-3. Single deployment serves all instances
+Each Fyso instance tenant has its own `site_config` entity records with their own data. The flow:
 
-**Recommendation**: Start with Phase 1. It requires minimal changes (roughly 5 hours of work across 4 issues), keeps the static architecture, and unblocks distribution. Phase 2 and 3 are optimizations that depend on adoption volume.
+1. **Build time**: `Layout.astro` calls `fetchSiteConfig()` which hits the Fyso API with the instance's `TENANT_ID` and `FYSO_API_TOKEN`.
+2. **Response**: The API returns that tenant's `site_config` records (clinic name, phone, address, etc.).
+3. **Render**: The static HTML is generated with default placeholders, then the inline `<script>` applies `site_config` values via `data-sc` attributes.
+4. **Result**: Each instance's build output is fully customized to that clinic.
+
+No code changes are needed for `site_config` itself -- the multi-tenant aspect is handled entirely by the tenant ID and API token.
+
+---
+
+## 5. Seed Data for Source Tenant
+
+The source tenant (`consultorio`) should include the following seed data so that new instances start with a working configuration:
+
+### Schema (already exists, inherited automatically)
+- `appointments` entity
+- `services` entity
+- `site_config` entity
+- `patients` (pacientes) entity
+- `professionals` (profesionales) entity
+- `obras_sociales` entity
+
+### Seed Records (should be created in the source tenant)
+- **`site_config`**: One record with all keys set to sensible defaults:
+  - `clinic_name`: "Mi Consultorio"
+  - `clinic_slogan`: "Tu consultorio de confianza"
+  - `address`: "(configurar direccion)"
+  - `phone`: "(configurar telefono)"
+  - `email`: "(configurar email)"
+  - `hours_weekday`: "8:00 - 20:00"
+  - `hours_saturday`: "9:00 - 14:00"
+  - `whatsapp`: ""
+- **`services`**: 2-3 example services (e.g., "Consulta General", "Control") so the appointment flow works out of the box.
+
+Instance tenants inherit the schema but start with empty data. The seed data in the source gives new instances a starting point to customize.
+
+---
+
+## 6. Follow-Up Code-Change Issues
+
+### Issue: Extract `TENANT_ID` to environment variable
+**Priority**: High
+**Files**: `src/lib/api.ts`, `src/lib/api-client.ts`, `src/lib/auth.ts`
+**Change**: Replace `const TENANT_ID = 'consultorio'` with:
+- `api.ts`: `const TENANT_ID = import.meta.env.TENANT_ID || 'consultorio'`
+- `api-client.ts` / `auth.ts`: `const TENANT_ID = import.meta.env.PUBLIC_TENANT_ID || 'consultorio'`
+
+### Issue: Namespace localStorage keys with tenant ID
+**Priority**: High
+**Files**: `src/lib/auth.ts`, `src/lib/api-client.ts`, `src/lib/cart.ts`, `src/layouts/AdminLayout.astro`
+**Change**: Replace hardcoded `consultorio_token` / `consultorio_user` / `consultorio_cart` with template using tenant ID:
+```ts
+const prefix = import.meta.env.PUBLIC_TENANT_ID || 'consultorio';
+const TOKEN_KEY = `${prefix}_token`;
+const USER_KEY = `${prefix}_user`;
+```
+
+### Issue: Update `.env.example` with tenant vars
+**Priority**: Medium
+**Files**: `.env.example`
+**Change**: Add `PUBLIC_TENANT_ID` and `TENANT_ID` entries with documentation.
+
+### Issue: Replace hardcoded "Consultorio" fallback text in layouts
+**Priority**: Low
+**Files**: `src/layouts/Layout.astro`, `src/layouts/AdminLayout.astro`
+**Change**: The `<title>` tag and sidebar logo text use "Consultorio" as default. These are already overridden by `site_config` at runtime, so this is cosmetic -- but replacing them with a generic default (or reading from env) would be cleaner.
+
+### Issue: Prepare source tenant seed data
+**Priority**: Medium
+**Change**: Create/verify `site_config` defaults and example services in the source tenant so new instances boot with usable data.
+
+### Issue: Document instance deployment process
+**Priority**: Low
+**Change**: Add a `docs/deploy-instance.md` guide covering how to deploy a new instance (create Fyso instance, set env vars, build, deploy).
+
+---
+
+## 7. Recommended Approach
+
+### Phase 1: Make the site tenant-agnostic (code changes)
+1. Extract `TENANT_ID` to env vars in all three files (`api.ts`, `api-client.ts`, `auth.ts`).
+2. Namespace `localStorage` keys with the tenant ID.
+3. Update `.env.example`.
+4. Verify the site still works with `TENANT_ID=consultorio` (backward compatible).
+
+### Phase 2: Prepare the source tenant (data changes)
+1. Ensure `site_config` has complete seed defaults.
+2. Add example services.
+3. Mark the source tenant as `standalone` -> ready for distribution.
+
+### Phase 3: Test distribution
+1. Create a test instance tenant via Fyso.
+2. Deploy the site with the instance's env vars.
+3. Verify: login, appointments, site config, admin panel all work against the instance tenant.
+
+### Estimated Effort
+- Phase 1: ~2 hours (straightforward string replacements + testing)
+- Phase 2: ~1 hour (data entry via Fyso dashboard or API)
+- Phase 3: ~1 hour (deployment + smoke testing)
+
+Total: ~4 hours of work across 3-4 small issues.
