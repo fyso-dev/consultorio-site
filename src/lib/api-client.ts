@@ -59,7 +59,24 @@ export async function apiCreate(entity: string, data: Record<string, any>): Prom
   return json?.data || json;
 }
 
+// Partial update — sends only the fields provided (PATCH semantics)
 export async function apiUpdate(entity: string, id: string, data: Record<string, any>): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/entities/${entity}/records/${id}`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (res.status === 401) { handleUnauthorized(); return null; }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to update ${entity}/${id}: ${res.status} ${text}`);
+  }
+  const json = await res.json();
+  return json?.data || json;
+}
+
+// Full replacement — overwrites the entire record (PUT semantics)
+export async function apiReplace(entity: string, id: string, data: Record<string, any>): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/entities/${entity}/records/${id}`, {
     method: 'PUT',
     headers: getHeaders(),
@@ -68,7 +85,7 @@ export async function apiUpdate(entity: string, id: string, data: Record<string,
   if (res.status === 401) { handleUnauthorized(); return null; }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Failed to update ${entity}/${id}: ${res.status} ${text}`);
+    throw new Error(`Failed to replace ${entity}/${id}: ${res.status} ${text}`);
   }
   const json = await res.json();
   return json?.data || json;
