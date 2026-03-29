@@ -1,19 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { doctorsConfig } from '../../lib/entities';
-import { apiList, apiDelete, buildLookup, getRecordDisplayName, formatDate } from '../../lib/api-client';
+import { apiList, apiDelete } from '../../lib/api-client';
 import CrudForm from './CrudForm';
 import DeleteConfirm from './DeleteConfirm';
 import DoctorScheduleEditor from './DoctorScheduleEditor';
-
-const DAYS_ORDER = [
-  { key: 'MO', label: 'L' },
-  { key: 'TU', label: 'M' },
-  { key: 'WE', label: 'X' },
-  { key: 'TH', label: 'J' },
-  { key: 'FR', label: 'V' },
-  { key: 'SA', label: 'S' },
-  { key: 'SU', label: 'D' },
-];
 
 export default function DoctorsPage() {
   const [records, setRecords] = useState<any[]>([]);
@@ -23,32 +13,12 @@ export default function DoctorsPage() {
   const [editRecord, setEditRecord] = useState<any>(null);
   const [deleteRecord, setDeleteRecord] = useState<any>(null);
   const [scheduleRecord, setScheduleRecord] = useState<any>(null);
-  const [doctorDays, setDoctorDays] = useState<Record<string, Set<string>>>({});
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: docs }, { data: horarios }] = await Promise.all([
-        apiList('doctors'),
-        apiList('horarios'),
-      ]);
+      const { data: docs } = await apiList('doctors');
       setRecords(docs);
-
-      // Build map: doctor_id -> Set of BYDAY codes from rrule
-      const daysMap: Record<string, Set<string>> = {};
-      for (const h of horarios) {
-        const d = h.data;
-        if (d?.profesional_id && d?.activo !== false && d?.rrule) {
-          const match = d.rrule.match(/BYDAY=([A-Z,]+)/);
-          if (match) {
-            if (!daysMap[d.profesional_id]) daysMap[d.profesional_id] = new Set();
-            for (const day of match[1].split(',')) {
-              daysMap[d.profesional_id].add(day);
-            }
-          }
-        }
-      }
-      setDoctorDays(daysMap);
     } catch (err) {
       console.error('Error loading doctors:', err);
     } finally {
@@ -110,7 +80,7 @@ export default function DoctorsPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Habilitado</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Online</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Horarios</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Especialidad</th>
                 <th className="w-32 px-4 py-3"></th>
               </tr>
             </thead>
@@ -122,8 +92,7 @@ export default function DoctorsPage() {
               )}
               {filtered.map(rec => {
                 const d = rec.data || {};
-                const name = `${d.first_name || ''} ${d.last_name || ''}`.trim() || 'Sin nombre';
-                const activeDays = doctorDays[rec.id] || new Set();
+                const name = d.name || 'Sin nombre';
 
                 return (
                   <tr key={rec.id} className="hover:bg-gray-50 transition-colors">
@@ -135,30 +104,11 @@ export default function DoctorsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${d.online_booking ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {d.online_booking ? 'Si' : 'No'}
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${d.online ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {d.online ? 'Si' : 'No'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-0.5">
-                        {DAYS_ORDER.map(day => {
-                          const enabled = activeDays.has(day.key);
-                          return (
-                            <span
-                              key={day.key}
-                              className={`w-6 h-6 flex items-center justify-center rounded text-xs font-medium ${
-                                enabled
-                                  ? 'bg-teal-100 text-teal-700'
-                                  : 'bg-gray-100 text-gray-400'
-                              }`}
-                              title={`${day.label}: ${enabled ? 'Atiende' : 'No atiende'}`}
-                            >
-                              {day.label}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{d.specialization || '-'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button

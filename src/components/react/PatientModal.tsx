@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { apiUpdate, apiList, field, getRecordDisplayName, buildLookup } from '../../lib/api-client';
+import { useState, useEffect } from 'react';
+import { apiUpdate, apiList, field, getRecordDisplayName } from '../../lib/api-client';
 
 const inputClass = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent";
 
@@ -11,70 +11,6 @@ const estadoBadge: Record<string, { bg: string; text: string; label: string }> =
   cancelado: { bg: 'bg-red-50', text: 'text-red-600', label: 'Cancelado' },
   ausente: { bg: 'bg-gray-50', text: 'text-gray-500', label: 'Ausente' },
 };
-
-// Leaflet map component
-function LocationMap({ location, address }: { location: any; address: string }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (!mapRef.current || !location?.lat || !location?.lng) return;
-
-    // Load Leaflet CSS
-    if (!document.querySelector('link[href*="leaflet"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
-    }
-
-    // Load Leaflet JS
-    function initMap() {
-      const L = (window as any).L;
-      if (!L || !mapRef.current) return;
-
-      // Destroy previous instance
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-
-      const map = L.map(mapRef.current).setView([location.lat, location.lng], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-      }).addTo(map);
-      L.marker([location.lat, location.lng]).addTo(map).bindPopup(address || 'Ubicacion');
-      mapInstanceRef.current = map;
-
-      // Fix for map tiles not loading in modal
-      setTimeout(() => map.invalidateSize(), 200);
-    }
-
-    if ((window as any).L) {
-      initMap();
-    } else {
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      script.onload = initMap;
-      document.head.appendChild(script);
-    }
-
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [location?.lat, location?.lng]);
-
-  if (!location?.lat || !location?.lng) return null;
-
-  return (
-    <div className="rounded-xl overflow-hidden border border-gray-200">
-      <div ref={mapRef} style={{ height: 200 }} />
-    </div>
-  );
-}
 
 interface PatientModalProps {
   patient: any;
@@ -90,27 +26,21 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
   const [historial, setHistorial] = useState<any[]>([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
 
-  // Editable form state
   const [form, setForm] = useState({
     first_name: patient.data?.first_name || '',
     last_name: patient.data?.last_name || '',
     dni: patient.data?.dni || '',
-    birth_date: patient.data?.birth_date?.split('T')[0] || '',
+    birthdate: patient.data?.birthdate?.split('T')[0] || '',
     email: patient.data?.email || '',
     phone: patient.data?.phone || '',
     network_id: patient.data?.network_id || '',
-    network_number: patient.data?.network_number || '',
     address: patient.data?.address || '',
     city: patient.data?.city || '',
-    gender: patient.data?.gender || '',
-    notes: patient.data?.notes || '',
+    sex: patient.data?.sex || '',
+    medical_record: patient.data?.medical_record || '',
   });
 
-  // Location from Fyso (has lat/lng)
-  const location = patient.data?.location;
-
   const networksList = Object.values(networksLookup);
-  const mapAddress = [form.address, form.city].filter(Boolean).join(', ');
 
   useEffect(() => {
     if (tab === 'historial' && historial.length === 0) {
@@ -121,12 +51,12 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
   async function loadHistorial() {
     setLoadingHistorial(true);
     try {
-      const res = await apiList('turnos', { limit: '200' });
+      const res = await apiList('appointments', { limit: '200' });
       const patientTurnos = res.data
-        .filter((t: any) => field(t, 'paciente_id') === patient.id)
+        .filter((t: any) => field(t, 'patient_id') === patient.id)
         .sort((a: any, b: any) => {
-          const fa = field(a, 'fecha') || '';
-          const fb = field(b, 'fecha') || '';
+          const fa = field(a, 'date') || '';
+          const fb = field(b, 'date') || '';
           return fb.localeCompare(fa);
         });
       setHistorial(patientTurnos);
@@ -151,15 +81,6 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
 
   function setField(key: string, value: string) {
     setForm(prev => ({ ...prev, [key]: value }));
-  }
-
-  // Open archivo from historial
-  function openArchivo(arch: any) {
-    const byteChars = atob(arch.data);
-    const byteNumbers = new Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-    const blob = new Blob([new Uint8Array(byteNumbers)], { type: arch.type });
-    window.open(URL.createObjectURL(blob), '_blank');
   }
 
   return (
@@ -212,7 +133,7 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de Nacimiento</label>
-                  <input type="date" value={form.birth_date} onChange={e => setField('birth_date', e.target.value)} className={inputClass} />
+                  <input type="date" value={form.birthdate} onChange={e => setField('birthdate', e.target.value)} className={inputClass} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -236,18 +157,14 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Nro Afiliado</label>
-                  <input type="text" value={form.network_number} onChange={e => setField('network_number', e.target.value)} className={inputClass} />
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Sexo</label>
+                  <select value={form.sex} onChange={e => setField('sex', e.target.value)} className={inputClass}>
+                    <option value="">--</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Femenino">Femenino</option>
+                    <option value="Otro">Otro</option>
+                  </select>
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Genero</label>
-                <select value={form.gender} onChange={e => setField('gender', e.target.value)} className={inputClass}>
-                  <option value="">--</option>
-                  <option value="Masculino">Masculino</option>
-                  <option value="Femenino">Femenino</option>
-                  <option value="Otro">Otro</option>
-                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -259,11 +176,9 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
                   <input type="text" value={form.city} onChange={e => setField('city', e.target.value)} placeholder="Ej: Buenos Aires" className={inputClass} />
                 </div>
               </div>
-              {/* Leaflet Map */}
-              <LocationMap location={location} address={mapAddress} />
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                <textarea value={form.notes} onChange={e => setField('notes', e.target.value)} rows={3} className={inputClass} />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Historia Clinica</label>
+                <textarea value={form.medical_record} onChange={e => setField('medical_record', e.target.value)} rows={3} className={inputClass} placeholder="Antecedentes, condiciones, etc." />
               </div>
               <div className="flex justify-end">
                 <button onClick={handleSave} disabled={saving}
@@ -286,33 +201,21 @@ export default function PatientModal({ patient, onClose, onPatientUpdated, netwo
               ) : (
                 <div className="space-y-3">
                   {historial.map(t => {
-                    const estado = field(t, 'estado') || 'pendiente';
+                    const estado = field(t, 'status') || 'pendiente';
                     const badge = estadoBadge[estado] || estadoBadge.pendiente;
-                    const doc = doctorsLookup[field(t, 'profesional_id')];
-                    let hArchivos: any[] = [];
-                    try { hArchivos = JSON.parse(field(t, 'archivos') || '[]'); } catch {}
+                    const doc = doctorsLookup[field(t, 'doctor_id')];
                     return (
                       <div key={t.id} className="border border-gray-100 rounded-lg p-3">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs text-gray-500">
-                            {field(t, 'fecha')?.split('T')[0] || '-'}
-                            {field(t, 'hora') && <span className="ml-1">{field(t, 'hora')}</span>}
+                            {field(t, 'date')?.split('T')[0] || '-'}
+                            {field(t, 'time') && <span className="ml-1">{field(t, 'time')}</span>}
                           </span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{badge.label}</span>
                           {doc && <span className="text-xs text-gray-400">{getRecordDisplayName(doc)}</span>}
                         </div>
-                        {field(t, 'notas_medicas') && (
-                          <p className="text-sm text-gray-700 mt-1">{field(t, 'notas_medicas')}</p>
-                        )}
-                        {hArchivos.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {hArchivos.map((a: any, i: number) => (
-                              <button key={i} onClick={() => openArchivo(a)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-xs text-teal-700 hover:bg-teal-50">
-                                📎 {a.name}
-                              </button>
-                            ))}
-                          </div>
+                        {field(t, 'consultation_notes') && (
+                          <p className="text-sm text-gray-700 mt-1">{field(t, 'consultation_notes')}</p>
                         )}
                       </div>
                     );

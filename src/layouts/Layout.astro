@@ -1,4 +1,6 @@
 ---
+import { fetchSiteConfig } from '../lib/api';
+
 interface Props {
   title: string;
   activePage?: string;
@@ -10,6 +12,9 @@ const navLinks = [
   { href: '/', label: 'Inicio', id: 'inicio' },
   { href: '/contacto', label: 'Contacto', id: 'contacto' },
 ];
+
+// Fetch site config server-side at build time — no credentials exposed to client
+const siteConfig: Record<string, string> = await fetchSiteConfig().catch(() => ({}));
 ---
 
 <!doctype html>
@@ -144,49 +149,15 @@ const navLinks = [
       </div>
     </footer>
 
-    <script is:inline>
+    <script is:inline define:vars={{ siteConfig }}>
       var btn = document.getElementById('mobile-menu-btn');
       var menu = document.getElementById('mobile-menu');
       if (btn) btn.addEventListener('click', function() { menu.classList.toggle('hidden'); });
 
-      (async function loadSiteConfig() {
-        var CACHE_KEY = 'consultorio_site_config';
-        var CACHE_TTL = 5 * 60 * 1000;
-
-        try {
-          var cached = sessionStorage.getItem(CACHE_KEY);
-          if (cached) {
-            var parsed = JSON.parse(cached);
-            if (Date.now() - parsed.ts < CACHE_TTL) { applySiteConfig(parsed.data); return; }
-          }
-        } catch(e) {}
-
-        try {
-          var BASE = 'https://app.fyso.dev';
-          var TENANT = 'consultorio';
-          var authRes = await fetch(BASE + '/api/auth/tenant/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Tenant-ID': TENANT },
-            body: JSON.stringify({ email: 'admin@consultorio.com', password: 'Consultorio2026!' }),
-          });
-          if (!authRes.ok) return;
-          var authData = await authRes.json();
-          var token = authData.data ? authData.data.token : authData.token;
-          if (!token) return;
-
-          var res = await fetch(BASE + '/api/entities/site_config/records?limit=1', {
-            headers: { 'Authorization': 'Bearer ' + token, 'X-Tenant-ID': TENANT },
-          });
-          if (!res.ok) return;
-          var json = await res.json();
-          var records = (json.data && json.data.data) ? json.data.data : [];
-          if (records.length === 0) return;
-          var config = records[0].data || {};
-
-          sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data: config, ts: Date.now() }));
-          applySiteConfig(config);
-        } catch (e) { console.error('Site config load failed:', e); }
-      })();
+      // Site config is baked in at build time — no client-side auth required
+      if (siteConfig && Object.keys(siteConfig).length > 0) {
+        applySiteConfig(siteConfig);
+      }
 
       function applySiteConfig(c) {
         document.querySelectorAll('[data-sc]').forEach(function(el) {
@@ -203,7 +174,7 @@ const navLinks = [
           });
         }
         if (c.clinic_name) {
-          document.title = document.title.replace(/Consultorio/, c.clinic_name);
+          document.title = document.title.replace('Consultorio', c.clinic_name);
         }
       }
     </script>

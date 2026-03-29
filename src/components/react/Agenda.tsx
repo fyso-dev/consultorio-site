@@ -58,7 +58,12 @@ const STATUS_FLOW = ['pendiente', 'confirmado', 'en_sala', 'atendido'];
 
 const inputClass = "w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent";
 
-interface Slot { fecha: string; hora: string; duracion: number; profesional_id: string; }
+// Slots from Fyso scheduling API: may use fecha/hora or date/time depending on API version
+interface Slot { fecha?: string; hora?: string; date?: string; time?: string; duracion?: number; duration?: number; profesional_id?: string; doctor_id?: string; }
+function slotDate(s: Slot): string { return s.fecha || s.date || ''; }
+function slotTime(s: Slot): string { return s.hora || s.time || ''; }
+function slotDuration(s: Slot): number { return s.duracion || s.duration || 0; }
+function slotDoctorId(s: Slot): string { return s.profesional_id || s.doctor_id || ''; }
 
 // --- Patient Search (server-side via Fyso search) ---
 function PatientSearch({ value, onSelect, onClear, networksLookup }: {
@@ -216,14 +221,14 @@ function EditTurnoModal({ turno, onClose, onSaved, onDeleted, patientsLookup, se
   servicesLookup: Record<string, any>;
   networksLookup: Record<string, any>;
 }) {
-  const currentPatient = patientsLookup[field(turno, 'paciente_id')];
+  const currentPatient = patientsLookup[field(turno, 'patient_id')];
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; display: string } | null>(
     currentPatient ? { id: currentPatient.id, display: getRecordDisplayName(currentPatient) } : null
   );
-  const [servicio, setServicio] = useState(field(turno, 'servicio_id') || '');
-  const [obraSocial, setObraSocial] = useState(field(turno, 'obra_social_id') || '');
-  const [notas, setNotas] = useState(field(turno, 'notas') || '');
-  const [estado, setEstado] = useState(field(turno, 'estado') || 'pendiente');
+  const [servicio, setServicio] = useState(field(turno, 'service_id') || '');
+  const [obraSocial, setObraSocial] = useState(field(turno, 'network_id') || '');
+  const [notas, setNotas] = useState(field(turno, 'appointment_notes') || '');
+  const [estado, setEstado] = useState(field(turno, 'status') || 'pendiente');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -242,13 +247,13 @@ function EditTurnoModal({ turno, onClose, onSaved, onDeleted, patientsLookup, se
     setSaving(true);
     try {
       const data: Record<string, any> = {
-        paciente_id: selectedPatient.id,
-        servicio_id: servicio || null,
-        obra_social_id: obraSocial || null,
-        notas: notas || null,
-        estado,
+        patient_id: selectedPatient.id,
+        service_id: servicio || null,
+        network_id: obraSocial || null,
+        appointment_notes: notas || null,
+        status: estado,
       };
-      await apiUpdate('turnos', turno.id, data);
+      await apiUpdate('appointments', turno.id, data);
       onSaved(turno.id, data);
       onClose();
     } catch (err: any) {
@@ -261,7 +266,7 @@ function EditTurnoModal({ turno, onClose, onSaved, onDeleted, patientsLookup, se
   async function handleDelete() {
     setDeleting(true);
     try {
-      await apiDelete('turnos', turno.id);
+      await apiDelete('appointments', turno.id);
       onDeleted(turno.id);
       onClose();
     } catch (err: any) {
@@ -282,8 +287,8 @@ function EditTurnoModal({ turno, onClose, onSaved, onDeleted, patientsLookup, se
         </div>
         <div className="p-6 space-y-4">
           <div className="flex items-center gap-3 text-sm text-gray-500">
-            <span className="font-medium text-gray-900">{field(turno, 'fecha')?.split('T')[0]}</span>
-            <span>{field(turno, 'hora')}</span>
+            <span className="font-medium text-gray-900">{field(turno, 'date')?.split('T')[0]}</span>
+            <span>{field(turno, 'time')}</span>
           </div>
 
           <PatientSearch
@@ -407,7 +412,7 @@ export default function Agenda() {
     async function load() {
       try {
         const [turnosRes, docRes, patRes, svcRes, netRes] = await Promise.all([
-          apiList('turnos'),
+          apiList('appointments'),
           apiList('doctors'),
           apiList('patients'),
           apiList('services'),
@@ -481,22 +486,20 @@ export default function Agenda() {
     setBookingSaving(true);
     try {
       const turnoData: Record<string, any> = {
-        profesional_id: bookingSlot.profesional_id,
-        paciente_id: selectedPatient.id,
-        fecha: bookingSlot.fecha,
-        hora: bookingSlot.hora,
-        duracion: bookingSlot.duracion,
-        estado: 'confirmado',
-        origen: 'manual',
+        doctor_id: slotDoctorId(bookingSlot),
+        patient_id: selectedPatient.id,
+        date: slotDate(bookingSlot),
+        time: slotTime(bookingSlot),
+        status: 'confirmado',
       };
-      if (bookingServicio) turnoData.servicio_id = bookingServicio;
-      if (bookingObraSocial) turnoData.obra_social_id = bookingObraSocial;
-      if (bookingNotas) turnoData.notas = bookingNotas;
+      if (bookingServicio) turnoData.service_id = bookingServicio;
+      if (bookingObraSocial) turnoData.network_id = bookingObraSocial;
+      if (bookingNotas) turnoData.appointment_notes = bookingNotas;
 
-      const rawTurno = await apiCreate('turnos', turnoData);
+      const rawTurno = await apiCreate('appointments', turnoData);
       const newTurno = normalizeRecord(rawTurno);
       setTurnos(prev => [...prev, newTurno]);
-      setAvailableSlots(prev => prev.filter(s => !(s.hora === bookingSlot.hora && s.profesional_id === bookingSlot.profesional_id)));
+      setAvailableSlots(prev => prev.filter(s => !(slotTime(s) === slotTime(bookingSlot) && slotDoctorId(s) === slotDoctorId(bookingSlot))));
       closeBooking();
     } catch (err: any) {
       alert(err.message || 'Error al crear turno');
@@ -517,8 +520,8 @@ export default function Agenda() {
   async function updateEstado(turnoId: string, estado: string) {
     setUpdating(turnoId);
     try {
-      await apiUpdate('turnos', turnoId, { estado });
-      setTurnos(prev => prev.map(t => t.id === turnoId ? { ...t, data: { ...t.data, estado } } : t));
+      await apiUpdate('appointments', turnoId, { status: estado });
+      setTurnos(prev => prev.map(t => t.id === turnoId ? { ...t, data: { ...t.data, status: estado } } : t));
     } catch (err) {
       console.error('Error updating turno:', err);
     } finally {
@@ -538,17 +541,15 @@ export default function Agenda() {
     setUpdating('blocking');
     try {
       const turnoData: Record<string, any> = {
-        profesional_id: slot.profesional_id,
-        fecha: slot.fecha,
-        hora: slot.hora,
-        duracion: slot.duracion,
-        estado: 'bloqueado',
-        origen: 'manual',
+        doctor_id: slotDoctorId(slot),
+        date: slotDate(slot),
+        time: slotTime(slot),
+        status: 'bloqueado',
       };
-      const rawTurno = await apiCreate('turnos', turnoData);
+      const rawTurno = await apiCreate('appointments', turnoData);
       const newTurno = normalizeRecord(rawTurno);
       setTurnos(prev => [...prev, newTurno]);
-      setAvailableSlots(prev => prev.filter(s => !(s.hora === slot.hora && s.profesional_id === slot.profesional_id)));
+      setAvailableSlots(prev => prev.filter(s => !(slotTime(s) === slotTime(slot) && slotDoctorId(s) === slotDoctorId(slot))));
     } catch (err: any) {
       alert(err.message || 'Error al bloquear turno');
     } finally {
@@ -559,7 +560,7 @@ export default function Agenda() {
   async function handleUnblock(turnoId: string) {
     setUpdating(turnoId);
     try {
-      await apiDelete('turnos', turnoId);
+      await apiDelete('appointments', turnoId);
       setTurnos(prev => prev.filter(t => t.id !== turnoId));
     } catch (err: any) {
       alert(err.message || 'Error al desbloquear');
@@ -575,20 +576,20 @@ export default function Agenda() {
   // Turnos count per date for calendar dots
   const turnosByDate: Record<string, number> = {};
   for (const t of turnos) {
-    const f = normalizeDate(field(t, 'fecha'));
-    if (f && (!selectedDoctor || field(t, 'profesional_id') === selectedDoctor)) {
+    const f = normalizeDate(field(t, 'date'));
+    if (f && (!selectedDoctor || field(t, 'doctor_id') === selectedDoctor)) {
       turnosByDate[f] = (turnosByDate[f] || 0) + 1;
     }
   }
 
   // Turnos for selected date + doctor
   const turnosDelDia = turnos
-    .filter(t => normalizeDate(field(t, 'fecha')) === selectedDate)
-    .filter(t => !selectedDoctor || field(t, 'profesional_id') === selectedDoctor)
-    .sort((a, b) => (field(a, 'hora') || '').localeCompare(field(b, 'hora') || ''));
+    .filter(t => normalizeDate(field(t, 'date')) === selectedDate)
+    .filter(t => !selectedDoctor || field(t, 'doctor_id') === selectedDoctor)
+    .sort((a, b) => (field(a, 'time') || '').localeCompare(field(b, 'time') || ''));
 
-  const bookedHoras = new Set(turnosDelDia.map(t => field(t, 'hora')));
-  const freeSlots = availableSlots.filter(s => !bookedHoras.has(s.hora));
+  const bookedHoras = new Set(turnosDelDia.map(t => field(t, 'time')));
+  const freeSlots = availableSlots.filter(s => !bookedHoras.has(slotTime(s)));
 
   const calendarDays = getCalendarDays(calYear, calMonth);
   const selectedDay = parseInt(selectedDate.split('-')[2], 10);
@@ -596,9 +597,9 @@ export default function Agenda() {
   const selYear = parseInt(selectedDate.split('-')[0], 10);
 
   // Day summary stats
-  const atendidosHoy = turnosDelDia.filter(t => field(t, 'estado') === 'atendido').length;
-  const pendientesHoy = turnosDelDia.filter(t => ['pendiente', 'confirmado', 'en_sala'].includes(field(t, 'estado'))).length;
-  const canceladosHoy = turnosDelDia.filter(t => ['cancelado', 'ausente'].includes(field(t, 'estado'))).length;
+  const atendidosHoy = turnosDelDia.filter(t => field(t, 'status') === 'atendido').length;
+  const pendientesHoy = turnosDelDia.filter(t => ['pendiente', 'confirmado', 'en_sala'].includes(field(t, 'status'))).length;
+  const canceladosHoy = turnosDelDia.filter(t => ['cancelado', 'ausente'].includes(field(t, 'status'))).length;
 
   // Services list for booking form
   const servicesList = Object.values(servicesLookup);
@@ -731,7 +732,7 @@ export default function Agenda() {
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedDoctor === doc.id ? 'bg-teal-500/10 text-teal-700 border border-teal-300' : 'text-gray-700 hover:bg-gray-100'
                 }`}>
-                {doc.data?.first_name} {doc.data?.last_name}
+                {doc.data?.name}
               </button>
             ))}
           </div>
@@ -776,7 +777,7 @@ export default function Agenda() {
             {DAY_NAMES[new Date(selectedDate + 'T12:00:00').getDay()]} {parseInt(selectedDate.split('-')[2])} {MONTH_SHORT[parseInt(selectedDate.split('-')[1]) - 1]}
             {selectedDoctor && doctorsLookup[selectedDoctor] && (
               <span className="text-gray-500 font-normal text-base ml-2">
-                - {doctorsLookup[selectedDoctor]?.data?.first_name} {doctorsLookup[selectedDoctor]?.data?.last_name}
+                - {doctorsLookup[selectedDoctor]?.data?.name}
               </span>
             )}
           </h2>
@@ -809,18 +810,18 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {[
-              ...turnosDelDia.map(t => ({ type: 'booked' as const, hora: field(t, 'hora'), turno: t })),
-              ...freeSlots.map(s => ({ type: 'free' as const, hora: s.hora, slot: s })),
+              ...turnosDelDia.map(t => ({ type: 'booked' as const, hora: field(t, 'time') || '', turno: t })),
+              ...freeSlots.map(s => ({ type: 'free' as const, hora: slotTime(s), slot: s })),
             ]
               .sort((a, b) => a.hora.localeCompare(b.hora))
               .map((item, idx) => {
                 if (item.type === 'booked') {
                   const turno = item.turno;
-                  const estado = field(turno, 'estado') || 'pendiente';
+                  const estado = field(turno, 'status') || 'pendiente';
                   const badge = estadoBadge[estado] || estadoBadge.pendiente;
-                  const patient = patientsLookup[field(turno, 'paciente_id')];
-                  const service = servicesLookup[field(turno, 'servicio_id')];
-                  const network = networksLookup[field(turno, 'obra_social_id')] || (patient ? networksLookup[patient.data?.network_id] : null);
+                  const patient = patientsLookup[field(turno, 'patient_id')];
+                  const service = servicesLookup[field(turno, 'service_id')];
+                  const network = networksLookup[field(turno, 'network_id')] || (patient ? networksLookup[patient.data?.network_id] : null);
                   const isUpdating = updating === turno.id;
                   const canAtender = ['pendiente', 'confirmado', 'en_sala'].includes(estado);
 
@@ -830,14 +831,13 @@ export default function Agenda() {
                       <div key={`b-${turno.id}`} className="flex items-stretch rounded-xl border border-gray-300 bg-gray-100 overflow-hidden">
                         <div className="w-20 shrink-0 flex flex-col items-center justify-center bg-white/50 border-r border-gray-300 py-3">
                           <span className="text-sm font-bold text-gray-500">{item.hora}</span>
-                          <span className="text-xs text-gray-400">{field(turno, 'duracion') || '-'} min</span>
                         </div>
                         <div className="flex-1 px-4 py-3 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                             <span className="text-sm font-medium text-gray-600">Bloqueado</span>
-                            {field(turno, 'notas') && (
-                              <span className="text-xs text-gray-400">- {field(turno, 'notas')}</span>
+                            {field(turno, 'appointment_notes') && (
+                              <span className="text-xs text-gray-400">- {field(turno, 'appointment_notes')}</span>
                             )}
                           </div>
                           <button onClick={() => handleUnblock(turno.id)} disabled={updating === turno.id}
@@ -853,7 +853,6 @@ export default function Agenda() {
                     <div key={`b-${turno.id}`} className={`flex items-stretch rounded-xl border ${badge.bg} overflow-hidden`}>
                       <div className="w-20 shrink-0 flex flex-col items-center justify-center bg-white/50 border-r border-inherit py-3">
                         <span className="text-sm font-bold text-gray-900">{item.hora}</span>
-                        <span className="text-xs text-gray-400">{field(turno, 'duracion') || '-'} min</span>
                       </div>
                       <div className="flex-1 px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -863,8 +862,8 @@ export default function Agenda() {
                             className={`text-sm font-medium ${patient ? 'text-teal-700 hover:underline cursor-pointer' : 'text-gray-900'}`}
                           >
                             {patient ? getRecordDisplayName(patient) : '-'}
-                            {patient?.data?.birth_date && (
-                              <span className="text-gray-500 font-normal ml-1">({calcAge(patient.data.birth_date)})</span>
+                            {patient?.data?.birthdate && (
+                              <span className="text-gray-500 font-normal ml-1">({calcAge(patient.data.birthdate)})</span>
                             )}
                           </button>
                           <span className={`ml-auto px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{badge.label}</span>
@@ -874,8 +873,8 @@ export default function Agenda() {
                           {service && <span>{network ? ' · ' : ''}{service.data?.name || getRecordDisplayName(service)}</span>}
                         </div>
                         {/* Notas flag - just an indicator */}
-                        {field(turno, 'notas') && (
-                          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs" title={field(turno, 'notas')}>
+                        {field(turno, 'appointment_notes') && (
+                          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-xs" title={field(turno, 'appointment_notes')}>
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
                             Nota
                           </span>
@@ -933,7 +932,7 @@ export default function Agenda() {
 
                 // Free slot
                 const slot = item.slot!;
-                const isOpen = bookingSlot?.hora === slot.hora;
+                const isOpen = bookingSlot != null && slotTime(bookingSlot) === slotTime(slot);
                 return (
                   <div key={`f-${idx}`} className="relative group">
                     <button
@@ -942,8 +941,8 @@ export default function Agenda() {
                         isOpen ? 'border-teal-400 bg-teal-50' : 'border-dashed border-gray-300 hover:border-teal-400 hover:bg-teal-50/50'
                       }`}>
                       <div className="w-20 shrink-0 flex flex-col items-center justify-center py-3">
-                        <span className="text-sm font-bold text-gray-500">{slot.hora}</span>
-                        <span className="text-xs text-gray-400">{slot.duracion} min</span>
+                        <span className="text-sm font-bold text-gray-500">{slotTime(slot)}</span>
+                        {slotDuration(slot) > 0 && <span className="text-xs text-gray-400">{slotDuration(slot)} min</span>}
                       </div>
                       <div className="flex-1 px-4 py-3 flex items-center">
                         <span className="w-2 h-2 rounded-full bg-gray-300 mr-2" />
@@ -964,7 +963,7 @@ export default function Agenda() {
 
                     {isOpen && (
                       <form onSubmit={handleQuickBook} className="mt-1 mb-2 p-4 bg-white rounded-xl border border-teal-300 shadow-sm space-y-3">
-                        <p className="text-sm font-semibold text-gray-900">Reservar turno - {slot.hora}hs</p>
+                        <p className="text-sm font-semibold text-gray-900">Reservar turno - {slotTime(slot)}hs</p>
 
                         <PatientSearch
                           value={selectedPatient}
@@ -1046,8 +1045,8 @@ export default function Agenda() {
       {atenderTurno && (
         <AtenderModal
           turno={atenderTurno}
-          patient={patientsLookup[field(atenderTurno, 'paciente_id')]}
-          network={networksLookup[field(atenderTurno, 'obra_social_id')] || networksLookup[patientsLookup[field(atenderTurno, 'paciente_id')]?.data?.network_id]}
+          patient={patientsLookup[field(atenderTurno, 'patient_id')]}
+          network={networksLookup[field(atenderTurno, 'network_id')] || networksLookup[patientsLookup[field(atenderTurno, 'patient_id')]?.data?.network_id]}
           doctorsLookup={doctorsLookup}
           onClose={() => setAtenderTurno(null)}
           onTurnoUpdated={handleTurnoEdited}

@@ -1,7 +1,7 @@
 const BASE_URL = 'https://app.fyso.dev';
 const TENANT_ID = 'consultorio';
-const AUTH_EMAIL = 'admin@consultorio.com';
-const AUTH_PASSWORD = 'Consultorio2026!';
+const AUTH_EMAIL = import.meta.env.FYSO_ADMIN_EMAIL;
+const AUTH_PASSWORD = import.meta.env.FYSO_ADMIN_PASSWORD;
 
 let cachedToken: string | null = null;
 
