@@ -488,7 +488,7 @@ export default function Agenda() {
       const turnoData: Record<string, any> = {
         doctor_id: slotDoctorId(bookingSlot),
         patient_id: selectedPatient.id,
-        appointment_date: `${slotDate(bookingSlot).split('T')[0]}T${slotTime(bookingSlot)}:00`,
+        appointment_date: `${slotDate(bookingSlot).split('T')[0]}T${slotTime(bookingSlot).slice(0, 5)}:00`,
         status: 'confirmado',
       };
       if (bookingServicio) turnoData.service_id = bookingServicio;
@@ -541,7 +541,7 @@ export default function Agenda() {
     try {
       const turnoData: Record<string, any> = {
         doctor_id: slotDoctorId(slot),
-        appointment_date: `${slotDate(slot).split('T')[0]}T${slotTime(slot)}:00`,
+        appointment_date: `${slotDate(slot).split('T')[0]}T${slotTime(slot).slice(0, 5)}:00`,
         status: 'bloqueado',
       };
       const rawTurno = await apiCreate('appointments', turnoData);
@@ -781,7 +781,7 @@ export default function Agenda() {
           </h2>
           <div className="flex items-center gap-3">
             {turnosDelDia.length > 0 && (
-              <button onClick={() => printDayPdf()} title="Imprimir listado del dia"
+              <button onClick={() => window.print()} title="Imprimir listado del dia"
                 className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
               </button>
